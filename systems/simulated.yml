@@ -1,0 +1,69 @@
+# OpsMate - ACTIVE system definition
+# Simulated payments environment backed by the sim-env module (HTTP on port 8100).
+# This is the system used for local development and automated tests.
+
+id: simulated
+name: Simulated Payments Environment
+connectorType: SIMULATED
+active: true
+baseUrl: ${SIM_ENV_URL:http://localhost:8100}
+
+# Services monitored by the simulated environment.
+services:
+  - name: payments
+    healthUrl: http://localhost:8100/api/v1/services/payments/health
+    containerName: sim-payments
+  - name: auth
+    healthUrl: http://localhost:8100/api/v1/services/auth/health
+    containerName: sim-auth
+  - name: ledger
+    healthUrl: http://localhost:8100/api/v1/services/ledger/health
+    containerName: sim-ledger
+  - name: notifier
+    healthUrl: http://localhost:8100/api/v1/services/notifier/health
+    containerName: sim-notifier
+
+# Fixed, parameterized queries. The agent may only reference these by name; free SQL is
+# never accepted. Parameters use named :placeholders bound at execution time.
+namedQueries:
+  stuck_jobs_count:
+    description: Number of jobs stuck in a non-terminal state on a given queue.
+    sql: >-
+      SELECT count(*) AS stuck_jobs
+      FROM jobs
+      WHERE state = 'STUCK'
+        AND queue = :queue
+  open_connections:
+    description: Open (non-idle) database connections for a given application.
+    sql: >-
+      SELECT count(*) AS open_connections
+      FROM pg_stat_activity
+      WHERE application_name = :application
+        AND state <> 'idle'
+  error_count_last_5m:
+    description: Count of ERROR-level log events in the last five minutes for a service.
+    sql: >-
+      SELECT count(*) AS error_count
+      FROM error_events
+      WHERE service = :service
+        AND created_at > now() - interval '5 minutes'
+
+# Remediation actions permitted against this system. Each carries a risk level; HIGH-risk
+# actions require a recorded, validated approval before execution.
+allowedActions:
+  - name: restart
+    description: Restart the target service to clear transient faults.
+    riskLevel: MEDIUM
+    requiresApproval: false
+  - name: retry-stuck-jobs
+    description: Re-drive jobs that are stuck in the processing queue.
+    riskLevel: LOW
+    requiresApproval: false
+  - name: clear-queue
+    description: Drop the pending queue to relieve back-pressure.
+    riskLevel: MEDIUM
+    requiresApproval: false
+  - name: scale-up
+    description: Add instances to increase capacity.
+    riskLevel: HIGH
+    requiresApproval: true

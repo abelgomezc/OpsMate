@@ -1,0 +1,21 @@
+server:
+  port: ${SERVER_PORT:8100}
+
+spring:
+  application:
+    name: sim-env
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.opsmate: DEBUG

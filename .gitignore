@@ -1,0 +1,26 @@
+# --- Java / Maven ---
+backend/target/
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# --- Entorno / secretos ---
+.env
+.env.local
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# --- Node / Frontend (fases posteriores) ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- Logs ---
+*.log
+logs/

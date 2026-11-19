@@ -1,0 +1,27 @@
+# OpsMate - DISABLED FinCore system (EXAMPLE / PLACEHOLDER ONLY)
+#
+# This file is a template for the future FinCore integration phase. EVERY value below is a
+# PLACEHOLDER and will be completed when FinCore is integrated. It is NOT active and is not
+# loaded as the active system; the registry will skip building a connector for it unless it
+# is explicitly requested by id.
+#
+# TODO(FinCore integration phase): replace all PLACEHOLDER values with real endpoints,
+# credentials, queries and actions, then set active: true once validated.
+
+id: PLACEHOLDER
+name: PLACEHOLDER
+connectorType: HTTP_HEALTH
+active: false
+baseUrl: PLACEHOLDER
+
+services:
+  - name: PLACEHOLDER
+    healthUrl: PLACEHOLDER
+    containerName: PLACEHOLDER
+
+namedQueries:
+  PLACEHOLDER:
+    description: PLACEHOLDER
+    sql: PLACEHOLDER
+
+allowedActions: []
