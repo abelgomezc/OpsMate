@@ -372,11 +372,11 @@ opsmate/
 | **2** | sim-env completo (4 servicios, 6 escenarios, 34 tests) | ✅ |
 | **3** | Conectores, configuración YAML, agent tools, ScopedValue | ✅ |
 | **4** | State machine, Supervisor, agentes, orquestación, timeouts, watchdog | ✅ |
-| **5** | Compliance, aprobaciones, Action, verificación | 🔄 En curso |
-| **6** | Knowledge base (runbooks + pgvector), auditoría, reportes | ⏳ Pendiente |
-| **7** | Monitor automático, API REST + SSE completa | ⏳ Pendiente |
-| **8** | Frontend React + TS + Vite | ⏳ Pendiente |
-| **9** | 6 scenario tests E2E, README final, AGENTS.md | ⏳ Pendiente |
+| **5** | Compliance, aprobaciones, Action, verificación | ✅ |
+| **6** | Knowledge base (runbooks + pgvector), auditoría, reportes | ✅ |
+| **7** | Monitor automático, API REST + SSE completa | ✅ |
+| **8** | Frontend React + TS + Vite | ✅ |
+| **9** | 6 scenario tests E2E, README final, AGENTS.md | ✅ |
 
 ---
 
