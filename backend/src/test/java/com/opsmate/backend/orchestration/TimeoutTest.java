@@ -9,17 +9,15 @@ import com.opsmate.backend.statemachine.CaseStateMachine;
 import com.opsmate.backend.testutil.FakeSimEnvServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.test.util.ReflectionTestUtils;
 
-import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -58,17 +56,26 @@ class TimeoutTest {
         if (server != null) server.close();
     }
 
+    @BeforeEach
+    void resetFakeChatModel() {
+        fakeChatModel.clear();
+    }
+
     @Test
     void agentTimeout_transitionsToFailed() throws Exception {
+        // Configure short step timeout for this test
+        ReflectionTestUtils.setField(orchestrator, "stepTimeoutMs", 500L);
+
         // Configure fake model to hang on Supervisor call
         fakeChatModel.withDynamicResponder(prompt -> {
             if (prompt.getInstructions().stream()
                     .anyMatch(m -> m.getText().contains("Supervisor"))) {
-                // Hang indefinitely
+                // Sleep longer than step timeout
                 try {
-                    Thread.sleep(Long.MAX_VALUE);
+                    Thread.sleep(2000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
+                    return "{}";
                 }
             }
             return "{}";
@@ -100,7 +107,10 @@ class TimeoutTest {
 
     @Test
     void globalCaseTimeout_transitionsToFailed() throws Exception {
-        // Fast responses but global timeout very short
+        // Configure very short global timeout
+        ReflectionTestUtils.setField(orchestrator, "caseTimeoutMinutes", 0L);
+
+        // Fast responses
         fakeChatModel.withDefaultResponse("{}");
 
         CaseEntity caseEntity = new CaseEntity("simulated", "Test global timeout");
@@ -109,10 +119,6 @@ class TimeoutTest {
 
         stateMachine.transition(CaseState.NEW, CaseState.TRIAGING, caseId.toString(), "Test");
         caseEntity.setStatus(CaseState.TRIAGING);
-        caseRepository.save(caseEntity);
-
-        // Set a very short global timeout by manipulating the deadline
-        caseEntity.setTimeoutAt(Instant.now().minusSeconds(1));
         caseRepository.save(caseEntity);
 
         CompletableFuture<Void> future = orchestrator.runCase(caseId);

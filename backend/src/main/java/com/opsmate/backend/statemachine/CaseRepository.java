@@ -1,6 +1,7 @@
 package com.opsmate.backend.statemachine;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,6 +27,10 @@ public interface CaseRepository extends JpaRepository<CaseEntity, UUID> {
     @Query("SELECT c FROM CaseEntity c WHERE c.systemId = :systemId ORDER BY c.createdAt DESC")
     List<CaseEntity> findBySystemIdOrderByCreatedAtDesc(@Param("systemId") String systemId);
 
+    @Query("SELECT c FROM CaseEntity c WHERE c.systemId = :systemId AND c.status IN :statuses")
+    List<CaseEntity> findBySystemIdAndStatusIn(@Param("systemId") String systemId,
+                                               @Param("statuses") List<CaseState> statuses);
+
     @Query("SELECT c FROM CaseEntity c WHERE c.status NOT IN ('RESOLVED', 'FAILED', 'CANCELLED') AND c.timeoutAt IS NOT NULL AND c.timeoutAt < :now")
     List<CaseEntity> findStuckCasesBefore(@Param("now") Instant now);
 
@@ -34,4 +39,8 @@ public interface CaseRepository extends JpaRepository<CaseEntity, UUID> {
 
     @Query("SELECT c FROM CaseEntity c WHERE c.status = 'AWAITING_APPROVAL'")
     List<CaseEntity> findAwaitingApprovalCases();
+
+    @Modifying
+    @Query("DELETE FROM CaseEntity c WHERE c.systemId = :systemId")
+    int deleteBySystemId(@Param("systemId") String systemId);
 }

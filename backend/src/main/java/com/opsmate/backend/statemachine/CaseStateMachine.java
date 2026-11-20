@@ -1,10 +1,10 @@
 package com.opsmate.backend.statemachine;
 
+import com.opsmate.backend.audit.AuditService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Set;
@@ -12,14 +12,15 @@ import java.util.Set;
 /**
  * Validates and performs case state transitions.
  *
- * <p>Each transition is persisted as an immutable event in {@code case_events}.</p>
+ * <p>Each transition is persisted as an immutable event in {@code case_events}
+ * through {@link AuditService}.</p>
  */
 @Component
 public class CaseStateMachine {
 
     private static final Logger log = LoggerFactory.getLogger(CaseStateMachine.class);
 
-    private final CaseEventRepository eventRepository;
+    private final AuditService auditService;
 
     /** Valid transitions: fromState -> set of allowed toStates. */
     private static final Map<CaseState, Set<CaseState>> VALID_TRANSITIONS = new EnumMap<>(CaseState.class);
@@ -37,8 +38,8 @@ public class CaseStateMachine {
         VALID_TRANSITIONS.put(CaseState.CANCELLED, Set.of());
     }
 
-    public CaseStateMachine(CaseEventRepository eventRepository) {
-        this.eventRepository = eventRepository;
+    public CaseStateMachine(AuditService auditService) {
+        this.auditService = auditService;
     }
 
     /**
@@ -56,18 +57,11 @@ public class CaseStateMachine {
             throw new IllegalStateException("Invalid state transition: " + from + " -> " + to);
         }
 
-        CaseEventRecord event = new CaseEventRecord(
-                java.util.UUID.fromString(caseId),
-                "STATE_TRANSITION",
-                Map.of(
-                        "from", from.name(),
-                        "to", to.name(),
-                        "reason", reason != null ? reason : "",
-                        "timestamp", Instant.now().toString()
-                ),
-                Instant.now()
-        );
-        eventRepository.save(event);
+        try {
+            auditService.recordStateTransition(java.util.UUID.fromString(caseId), from.name(), to.name(), reason);
+        } catch (Exception e) {
+            log.warn("No se pudo registrar el evento de auditoria para la transicion {} -> {}", from, to, e);
+        }
         log.info("Case {} transitioned: {} -> {} ({})", caseId, from, to, reason != null ? reason : "no reason");
     }
 

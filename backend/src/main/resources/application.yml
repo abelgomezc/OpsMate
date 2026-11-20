@@ -45,6 +45,8 @@ opsmate:
     max-iterations: ${AGENT_MAX_ITERATIONS:10}
   case:
     timeout-minutes: ${CASE_TIMEOUT_MINUTES:10}
+  knowledge:
+    runbooks-dir: ${RUNBOOKS_DIR:runbooks}
   watchdog:
     timeout-minutes: ${WATCHDOG_TIMEOUT_MINUTES:5}
     interval-seconds: ${WATCHDOG_INTERVAL_SECONDS:30}
@@ -53,6 +55,9 @@ opsmate:
     dir: ${SYSTEMS_DIR:systems}
   action:
     dry-run: ${ACTION_DRY_RUN:false}
+  monitor:
+    enabled: ${MONITOR_ENABLED:false}
+    interval-seconds: ${MONITOR_INTERVAL_SECONDS:30}
 
 management:
   endpoints:

@@ -1,5 +1,6 @@
 package com.opsmate.backend.agent;
 
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.agent.tools.KnowledgeTools;
 import com.opsmate.backend.statemachine.CaseEventRepository;
 import org.springframework.ai.chat.model.ChatModel;
@@ -33,8 +34,9 @@ public class KnowledgeAgent extends AbstractAgent {
 
     private final KnowledgeTools knowledgeTools;
 
-    public KnowledgeAgent(ChatModel chatModel, CaseEventRepository eventRepository, KnowledgeTools knowledgeTools) {
-        super("knowledge", chatModel, eventRepository, 3, 60000);
+    public KnowledgeAgent(ChatModel chatModel, CaseEventRepository eventRepository,
+                          AuditService auditService, KnowledgeTools knowledgeTools) {
+        super("knowledge", chatModel, eventRepository, auditService, 3, 60000);
         this.knowledgeTools = knowledgeTools;
     }
 

@@ -1,5 +1,6 @@
 package com.opsmate.backend.agent;
 
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.agent.tools.ActionTools;
 import com.opsmate.backend.statemachine.CaseEventRepository;
 import com.opsmate.backend.statemachine.CaseRepository;
@@ -34,8 +35,8 @@ public class ActionAgent extends AbstractAgent {
     private final CaseRepository caseRepository;
 
     public ActionAgent(ChatModel chatModel, CaseEventRepository eventRepository,
-                       ActionTools actionTools, CaseRepository caseRepository) {
-        super("action", chatModel, eventRepository, 3, 60000);
+                       AuditService auditService, ActionTools actionTools, CaseRepository caseRepository) {
+        super("action", chatModel, eventRepository, auditService, 3, 60000);
         this.actionTools = actionTools;
         this.caseRepository = caseRepository;
     }
@@ -73,6 +74,11 @@ public class ActionAgent extends AbstractAgent {
                     "health", actionResult.health(),
                     "details", "Action executed successfully"
             );
+            // Record the execution outcome on the case entity
+            caseEntity.setExecutedAction(action);
+            caseEntity.setActionResult(actionResult.message());
+            caseEntity.setResolved(actionResult.resolved());
+            caseRepository.save(caseEntity);
         } catch (Exception e) {
             result = Map.of(
                     "executed", false,
@@ -81,6 +87,10 @@ public class ActionAgent extends AbstractAgent {
                     "health", "UNKNOWN",
                     "details", "Action failed: " + e.getMessage()
             );
+            caseEntity.setExecutedAction(action);
+            caseEntity.setActionResult(e.getMessage());
+            caseEntity.setResolved(false);
+            caseRepository.save(caseEntity);
         }
 
         return new AgentResult(name(), "Action " + (Boolean.TRUE.equals(result.get("executed")) ? "succeeded" : "failed"), result, List.of(), 0, chatModelName());

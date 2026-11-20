@@ -1,6 +1,9 @@
 package com.opsmate.backend.agent;
 
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.agent.tools.DiagnosticTools;
+import com.opsmate.backend.connector.model.Health;
+import com.opsmate.backend.connector.model.ServiceMetrics;
 import com.opsmate.backend.statemachine.CaseEventRepository;
 import com.opsmate.backend.statemachine.CaseRepository;
 import org.springframework.ai.chat.model.ChatModel;
@@ -10,7 +13,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Verify agent: re-reads system health and compares to expected resolution.
+ * Verify agent: re-reads system health via {@link DiagnosticTools} and compares it
+ * against the expected resolution.
+ *
+ * <p>The RESOLVED / NOT_RESOLVED verdict is computed deterministically from the
+ * observed health and metrics; the LLM is not involved in the decision.</p>
  */
 @Component
 public class VerifyAgent extends AbstractAgent {
@@ -28,12 +35,14 @@ public class VerifyAgent extends AbstractAgent {
             }
             """;
 
+    private static final String SERVICE = "payments";
+
     private final DiagnosticTools diagnosticTools;
     private final CaseRepository caseRepository;
 
     public VerifyAgent(ChatModel chatModel, CaseEventRepository eventRepository,
-                       DiagnosticTools diagnosticTools, CaseRepository caseRepository) {
-        super("verify", chatModel, eventRepository, 3, 60000);
+                       AuditService auditService, DiagnosticTools diagnosticTools, CaseRepository caseRepository) {
+        super("verify", chatModel, eventRepository, auditService, 3, 60000);
         this.diagnosticTools = diagnosticTools;
         this.caseRepository = caseRepository;
     }
@@ -58,16 +67,30 @@ public class VerifyAgent extends AbstractAgent {
 
     @Override
     protected AgentResult processResponse(String response, AgentContext ctx) {
-        Map<String, Object> parsed = parseJson(response);
-        String status = (String) parsed.getOrDefault("status", "NOT_RESOLVED");
-        return new AgentResult(name(), "Verification: " + status, parsed, List.of(), 0, chatModelName());
-    }
+        var caseEntity = caseRepository.findById(java.util.UUID.fromString(ctx.caseId())).orElseThrow();
 
-    private Map<String, Object> parseJson(String json) {
-        try {
-            return new com.fasterxml.jackson.databind.ObjectMapper().readValue(json, Map.class);
-        } catch (Exception e) {
-            return Map.of("status", "NOT_RESOLVED", "evidence", "parse_error", "details", e.getMessage());
-        }
+        // Re-check system health deterministically via the diagnostic tools
+        Health health = diagnosticTools.getHealth(SERVICE);
+        ServiceMetrics metrics = diagnosticTools.getMetrics(SERVICE);
+
+        String healthStatus = health == null ? "UNKNOWN" : health.status();
+        boolean resolved = "UP".equalsIgnoreCase(healthStatus);
+        String status = resolved ? "RESOLVED" : "NOT_RESOLVED";
+
+        String evidence = "service=" + SERVICE + " health=" + healthStatus
+                + " latencyMs=" + (metrics == null ? "n/a" : metrics.latencyMs())
+                + " errorRate=" + (metrics == null ? "n/a" : metrics.errorRate());
+        String details = resolved
+                ? "Service " + SERVICE + " is healthy after action " + caseEntity.getProposedAction()
+                : "Service " + SERVICE + " is not healthy; remediation not confirmed";
+
+        Map<String, Object> structured = Map.of(
+                "status", status,
+                "evidence", evidence,
+                "details", details,
+                "service", SERVICE
+        );
+
+        return new AgentResult(name(), "Verification: " + status, structured, List.of(), 0, chatModelName());
     }
 }

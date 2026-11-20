@@ -26,15 +26,7 @@ public class TestConfig {
     @Primary
     public ChatModel chatModel() {
         return new FakeChatModel()
-                .withDefaultResponse("""
-                        {
-                          "nextAction": "TRIAGE",
-                          "riskLevel": "LOW",
-                          "rationale": "Starting triage",
-                          "plan": null,
-                          "proposedAction": null
-                        }
-                        """)
+                .withDefaultResponse("{}")
                 .withResponse("Triage agent", """
                         {
                           "severity": "MEDIA",
@@ -91,18 +83,21 @@ public class TestConfig {
     }
 
     @Bean
-    public SystemRegistry systemRegistry(SystemConnector connector) {
+    public SystemRegistry systemRegistry(FakeSimEnvServer server) {
+        String baseUrl = server.baseUrl();
         SystemsConfig simulated = new SystemsConfig(
                 "simulated",
                 "Simulated Payments Environment",
                 ConnectorType.SIMULATED,
                 true,
-                "http://localhost",
+                baseUrl,
                 List.of(new SystemsConfig.ServiceConfig("payments", "ignored", null)),
                 Map.of(),
                 List.of(
                         new SystemsConfig.AllowedAction("restart", "Restart service", RiskLevel.MEDIUM, false),
-                        new SystemsConfig.AllowedAction("scale-up", "Scale up", RiskLevel.HIGH, true)
+                        new SystemsConfig.AllowedAction("scale-up", "Scale up", RiskLevel.HIGH, true),
+                        new SystemsConfig.AllowedAction("clear-queue", "Clear queue", RiskLevel.MEDIUM, false),
+                        new SystemsConfig.AllowedAction("retry-stuck-jobs", "Retry stuck jobs", RiskLevel.MEDIUM, false)
                 )
         );
         return new SystemRegistry(List.of(simulated), new ConnectorFactory());

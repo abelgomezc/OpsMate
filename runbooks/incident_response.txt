@@ -1,0 +1,18 @@
+Runbook: incident_response
+=====================
+
+Respuesta general a incidentes. Aplicar este runbook cuando no exista uno especifico para el sintoma observado.
+
+Fases:
+1. Detectar y clasificar: revisar la salud del sistema (listServices) y determinar severidad (BAJA, MEDIA, ALTA, CRITICA) y categoria (downtime, latency, errores, capacidad, datos).
+2. Notificar: comunicar el incidente al equipo de guardia segun la severidad.
+3. Investigar: usar las herramientas de diagnostico (getHealth, getMetrics, getLogs, runNamedQuery) para recopilar evidencia.
+4. Formular hipotesis: identificar la causa probable y los servicios afectados.
+5. Planificar: elegir la accion de remediacion (reinicio, escalado, rollback, etc.) y evaluar el riesgo (LOW/MEDIUM/HIGH).
+6. Ejecutar: aplicar la accion aprobada (las acciones HIGH requieren aprobacion registrada).
+7. Verificar: confirmar que los servicios vuelven a estado UP y que el problema ya no se reproduce.
+8. Documentar: registrar el resumen, acciones y resultado en el caso; indexar el caso resuelto como caso pasado para referencia futura.
+
+Si durante la investigacion se identifica un patron conocido, cambiar al runbook especifico correspondiente (service_down, high_latency, error_spike, stuck_queue, db_pool_exhausted, cascading_failure, connection_pool).
+
+Condicion de corte: sistema estable, servicios UP, incidente documentado y caso cerrado.

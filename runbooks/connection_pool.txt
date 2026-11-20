@@ -1,0 +1,21 @@
+Runbook: connection_pool
+=====================
+
+Pool de conexiones (de servicios externos o de bases de datos) con comportamiento anormal.
+
+Causas posibles:
+- Numero maximo de conexiones alcanzado.
+- Conexiones en estado idle que no se cierran.
+- Firewall o grupo de seguridad bloqueando nuevas conexiones.
+- Configuracion de keep-alive inadecuada que deja conexiones muertas.
+
+Pasos de remediacion:
+1. Listar servicios y metricas: listServices(), getMetrics(servicio).
+2. Revisar el numero de conexiones abiertas y el limite configurado.
+3. Revisar logs del servicio en busca de errores de conexion (timeout, refused, reset).
+4. Verificar conectividad de red hacia el destino (DNS, puerto, firewall).
+5. Reiniciar el servicio para limpiar conexiones muertas (accion: restart).
+6. Ajustar el tamano maximo del pool y el tiempo de vida de las conexiones (max life / idle timeout).
+7. Validar que las nuevas conexiones se establezcan sin errores.
+
+Condicion de corte: el servicio establece conexiones nuevas correctamente y el uso del pool queda por debajo del 80% del maximo.

@@ -1,0 +1,22 @@
+Runbook: high_latency
+=====================
+
+Latencia elevada en uno o mas servicios. Los tiempos de respuesta superan el umbral acordado (SLO).
+
+Causas posibles:
+- Saturacion de CPU o memoria del host/contenedor.
+- Pool de conexiones de la base de datos agotado (ver db_pool_exhausted).
+- Consultas lentas o falta de indices en la base de datos.
+- Dependencias externas lentas (APIs de terceros, colas).
+- Garbage collection agresivo del JVM.
+
+Pasos de remediacion:
+1. Listar los servicios y sus metricas: listServices(), getMetrics(servicio).
+2. Identificar el servicio con latencyMs por encima del umbral.
+3. Consultar el health del servicio: getHealth(servicio).
+4. Revisar los logs recientes: getLogs(servicio) en busca de timeouts o errores de conexión.
+5. Si la base de datos esta involucrada, revisar metrica de pool de conexiones y consultas lentas.
+6. Si el host esta saturado, escalar verticalmente o replicar instancias (accion: scale-up, requiere aprobacion si es HIGH).
+7. Aplicar la accion de remediacion elegida y volver a medir la latencia.
+
+Condicion de corte: latencyMs vuelve al rango normal y el error rate se estabiliza.

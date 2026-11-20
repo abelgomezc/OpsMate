@@ -1,5 +1,6 @@
 package com.opsmate.backend.agent;
 
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.agent.tools.ActionTools;
 import com.opsmate.backend.agent.tools.DiagnosticTools;
 import com.opsmate.backend.agent.tools.KnowledgeTools;
@@ -58,10 +59,10 @@ public class SupervisorAgent extends AbstractAgent {
     private final ActionTools actionTools;
 
     public SupervisorAgent(ChatModel chatModel, CaseEventRepository eventRepository,
-                           CaseRepository caseRepository, SystemRegistry systemRegistry,
+                           AuditService auditService, CaseRepository caseRepository, SystemRegistry systemRegistry,
                            TriageTools triageTools, KnowledgeTools knowledgeTools,
                            DiagnosticTools diagnosticTools, ActionTools actionTools) {
-        super("supervisor", chatModel, eventRepository, 5, 120000);
+        super("supervisor", chatModel, eventRepository, auditService, 5, 120000);
         this.caseRepository = caseRepository;
         this.systemRegistry = systemRegistry;
         this.triageTools = triageTools;

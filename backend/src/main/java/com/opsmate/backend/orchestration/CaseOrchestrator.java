@@ -1,9 +1,14 @@
 package com.opsmate.backend.orchestration;
 
+import com.opsmate.backend.approval.ApprovalService;
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.agent.Agent;
 import com.opsmate.backend.agent.AgentContext;
 import com.opsmate.backend.agent.AgentRegistry;
 import com.opsmate.backend.agent.AgentResult;
+import com.opsmate.backend.config.RiskLevel;
+import com.opsmate.backend.context.CaseContext;
+import com.opsmate.backend.knowledge.PastCaseIndexer;
 import com.opsmate.backend.statemachine.CaseEntity;
 import com.opsmate.backend.statemachine.CaseRepository;
 import com.opsmate.backend.statemachine.CaseState;
@@ -38,22 +43,34 @@ public class CaseOrchestrator {
     private final CaseRepository caseRepository;
     private final CaseStateMachine stateMachine;
     private final AgentRegistry agentRegistry;
+    private final ApprovalService approvalService;
+    private final PastCaseIndexer pastCaseIndexer;
+    private final AuditService auditService;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
     private final long caseTimeoutMinutes;
     private final long stepTimeoutMs;
-    private final int maxReplans;
+    private int maxReplans;
 
     public CaseOrchestrator(CaseRepository caseRepository, CaseStateMachine stateMachine,
-                            AgentRegistry agentRegistry,
+                            AgentRegistry agentRegistry, ApprovalService approvalService,
+                            PastCaseIndexer pastCaseIndexer, AuditService auditService,
                             @Value("${opsmate.case.timeout-minutes:10}") long caseTimeoutMinutes,
                             @Value("${opsmate.step.timeout-ms:60000}") long stepTimeoutMs,
                             @Value("${opsmate.agent.max-iterations:10}") int maxReplans) {
         this.caseRepository = caseRepository;
         this.stateMachine = stateMachine;
         this.agentRegistry = agentRegistry;
+        this.approvalService = approvalService;
+        this.pastCaseIndexer = pastCaseIndexer;
+        this.auditService = auditService;
         this.caseTimeoutMinutes = caseTimeoutMinutes;
         this.stepTimeoutMs = stepTimeoutMs;
+        this.maxReplans = maxReplans;
+    }
+
+    /** For test configuration only. */
+    public void setMaxReplans(int maxReplans) {
         this.maxReplans = maxReplans;
     }
 
@@ -79,7 +96,9 @@ public class CaseOrchestrator {
         caseEntity.setTimeoutAt(deadline);
         caseRepository.save(caseEntity);
 
-        int replanCount = 0;
+        // Start at -1 so first INVESTIGATING visit sets it to 0 (initial investigation),
+        // each replan increments: 1, 2, 3... fail when > maxReplans
+        int replanCount = -1;
 
         while (!isTerminal(caseEntity.getStatus())) {
             if (Instant.now().isAfter(deadline)) {
@@ -97,7 +116,10 @@ public class CaseOrchestrator {
 
             caseEntity = caseRepository.findById(caseId).orElseThrow();
 
-            if (caseEntity.getStatus() == CaseState.INVESTIGATING && replanCount > 0) {
+            // Count replans: each visit to INVESTIGATING increments.
+            // Initial investigation: -1 -> 0. Replan 1: 0 -> 1. Replan 2: 1 -> 2.
+            // Fail when > maxReplans (e.g., 3 > 2 for maxReplans=2).
+            if (caseEntity.getStatus() == CaseState.INVESTIGATING) {
                 replanCount++;
                 if (replanCount > maxReplans) {
                     handleFailure(caseId, "Max replans (" + maxReplans + ") exceeded");
@@ -125,7 +147,7 @@ public class CaseOrchestrator {
             case TRIAGING -> {
                 // Run Triage agent
                 Agent triage = agentRegistry.getRequired("triage");
-                AgentResult result = runAgentWithTimeout(triage, ctx);
+                AgentResult result = runAgentWithTimeout(triage, ctx, caseId, caseEntity.getSystemId());
                 // Triage agent updates severity/category in case entity via its result
                 // Transition to INVESTIGATING
                 transitionTo(caseEntity, CaseState.INVESTIGATING, "Triage completed");
@@ -135,15 +157,17 @@ public class CaseOrchestrator {
                 Agent knowledge = agentRegistry.getRequired("knowledge");
                 Agent diagnostic = agentRegistry.getRequired("diagnostic");
 
-                CompletableFuture<AgentResult> knowledgeFuture = CompletableFuture.supplyAsync(() -> knowledge.run(ctx), executor);
-                CompletableFuture<AgentResult> diagnosticFuture = CompletableFuture.supplyAsync(() -> diagnostic.run(ctx), executor);
+                CompletableFuture<AgentResult> knowledgeFuture = CompletableFuture.supplyAsync(
+                        () -> CaseContext.runIn(new CaseContext(caseId, caseEntity.getSystemId()), () -> knowledge.run(ctx)), executor);
+                CompletableFuture<AgentResult> diagnosticFuture = CompletableFuture.supplyAsync(
+                        () -> CaseContext.runIn(new CaseContext(caseId, caseEntity.getSystemId()), () -> diagnostic.run(ctx)), executor);
 
                 AgentResult knowledgeResult = knowledgeFuture.get(stepTimeoutMs, TimeUnit.MILLISECONDS);
                 AgentResult diagnosticResult = diagnosticFuture.get(stepTimeoutMs, TimeUnit.MILLISECONDS);
 
                 // Then run Supervisor to consolidate and create plan
                 Agent supervisor = agentRegistry.getRequired("supervisor");
-                AgentResult supervisorResult = runAgentWithTimeout(supervisor, ctx);
+                AgentResult supervisorResult = runAgentWithTimeout(supervisor, ctx, caseId, caseEntity.getSystemId());
 
                 applySupervisorDecision(caseEntity, supervisorResult);
             }
@@ -153,17 +177,16 @@ public class CaseOrchestrator {
             }
             case EXECUTING -> {
                 Agent action = agentRegistry.getRequired("action");
-                AgentResult result = runAgentWithTimeout(action, ctx);
-                // If action executed, transition to VERIFYING
-                if (Boolean.TRUE.equals(result.structuredJson().get("resolved"))) {
-                    transitionTo(caseEntity, CaseState.VERIFYING, "Action executed, verifying resolution");
-                } else {
-                    handleFailure(caseEntity.getId(), "Action did not resolve: " + result.structuredJson().get("result"));
-                }
+                AgentResult result = runAgentWithTimeout(action, ctx, caseId, caseEntity.getSystemId());
+                // Refresh so mutations performed by the Action agent (executedAction, resolved,
+                // actionResult) are not overwritten by this stale instance.
+                CaseEntity refreshed = caseRepository.findById(caseEntity.getId()).orElseThrow();
+                // Always transition to VERIFYING; Verify agent determines resolution
+                transitionTo(refreshed, CaseState.VERIFYING, "Action executed, verifying resolution");
             }
             case VERIFYING -> {
                 Agent verify = agentRegistry.getRequired("verify");
-                AgentResult result = runAgentWithTimeout(verify, ctx);
+                AgentResult result = runAgentWithTimeout(verify, ctx, caseId, caseEntity.getSystemId());
                 String status = (String) result.structuredJson().getOrDefault("status", "NOT_RESOLVED");
                 if ("RESOLVED".equals(status)) {
                     transitionTo(caseEntity, CaseState.RESOLVED, "Verification: resolved");
@@ -185,8 +208,10 @@ public class CaseOrchestrator {
         }
     }
 
-    private AgentResult runAgentWithTimeout(Agent agent, AgentContext ctx) throws Exception {
-        CompletableFuture<AgentResult> future = CompletableFuture.supplyAsync(() -> agent.run(ctx), executor);
+    private AgentResult runAgentWithTimeout(Agent agent, AgentContext ctx, String caseId, String systemId) throws Exception {
+        CaseContext caseContext = new CaseContext(caseId, systemId);
+        CompletableFuture<AgentResult> future = CompletableFuture.supplyAsync(
+                () -> CaseContext.runIn(caseContext, () -> agent.run(ctx)), executor);
         try {
             return future.get(stepTimeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
@@ -198,6 +223,13 @@ public class CaseOrchestrator {
     private void applySupervisorDecision(CaseEntity caseEntity, AgentResult result) {
         Map<String, Object> decision = result.structuredJson();
         String next = (String) decision.getOrDefault("nextAction", "FAIL");
+
+        // Persist proposedAction from Supervisor so Action agent can read it
+        String proposed = (String) decision.get("proposedAction");
+        if (proposed != null) {
+            caseEntity.setProposedAction(proposed);
+            caseRepository.save(caseEntity);
+        }
 
         switch (next) {
             case "PLAN" -> transitionTo(caseEntity, CaseState.PLANNED, "Supervisor: plan created");
@@ -212,19 +244,27 @@ public class CaseOrchestrator {
     private void runCompliance(CaseEntity caseEntity) {
         try {
             Agent compliance = agentRegistry.getRequired("compliance");
-            AgentContext ctx = new AgentContext(
-                    caseEntity.getId().toString(),
-                    caseEntity.getSystemId(),
-                    10,
-                    stepTimeoutMs,
-                    120000
-            );
+            String caseId = caseEntity.getId().toString();
+            String systemId = caseEntity.getSystemId();
+            AgentContext ctx = new AgentContext(caseId, systemId, 10, stepTimeoutMs, 120000);
 
-            AgentResult result = CompletableFuture.supplyAsync(() -> compliance.run(ctx), executor)
+            AgentResult result = CompletableFuture.supplyAsync(
+                    () -> CaseContext.runIn(new CaseContext(caseId, systemId), () -> compliance.run(ctx)), executor)
                     .get(stepTimeoutMs, TimeUnit.MILLISECONDS);
 
             Object needsApproval = result.structuredJson().get("needsApproval");
+            Object riskLevelObj = result.structuredJson().get("riskLevel");
+            String proposedAction = caseEntity.getProposedAction();
             if (Boolean.TRUE.equals(needsApproval)) {
+                RiskLevel risk = RiskLevel.LOW;
+                if (riskLevelObj != null) {
+                    try {
+                        risk = RiskLevel.valueOf(String.valueOf(riskLevelObj));
+                    } catch (IllegalArgumentException ignored) {
+                        // keep default LOW
+                    }
+                }
+                approvalService.createPending(caseEntity.getId(), proposedAction, risk);
                 transitionTo(caseEntity, CaseState.AWAITING_APPROVAL,
                         "Compliance: HIGH risk action requires approval");
             } else {
@@ -241,6 +281,9 @@ public class CaseOrchestrator {
         stateMachine.transition(caseEntity.getStatus(), to, caseEntity.getId().toString(), reason);
         caseEntity.setStatus(to);
         caseRepository.save(caseEntity);
+        if (to == CaseState.RESOLVED) {
+            pastCaseIndexer.indexResolvedCase(caseEntity);
+        }
     }
 
     private boolean isTerminal(CaseState state) {
@@ -254,6 +297,11 @@ public class CaseOrchestrator {
             caseEntity.setStatus(CaseState.FAILED);
             caseEntity.setFailReason(reason);
             caseRepository.save(caseEntity);
+            try {
+                auditService.recordFailure(caseId, reason, "orchestrator");
+            } catch (Exception e) {
+                log.warn("No se pudo registrar el fallo en auditoria", e);
+            }
             log.warn("Case {} transitioned to FAILED: {}", caseId, reason);
         }
     }

@@ -1,5 +1,6 @@
 package com.opsmate.backend.agent;
 
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.agent.tools.TriageTools;
 import com.opsmate.backend.statemachine.CaseEventRepository;
 import org.springframework.ai.chat.model.ChatModel;
@@ -33,8 +34,9 @@ public class TriageAgent extends AbstractAgent {
 
     private final TriageTools triageTools;
 
-    public TriageAgent(ChatModel chatModel, CaseEventRepository eventRepository, TriageTools triageTools) {
-        super("triage", chatModel, eventRepository, 3, 60000);
+    public TriageAgent(ChatModel chatModel, CaseEventRepository eventRepository,
+                       AuditService auditService, TriageTools triageTools) {
+        super("triage", chatModel, eventRepository, auditService, 3, 60000);
         this.triageTools = triageTools;
     }
 

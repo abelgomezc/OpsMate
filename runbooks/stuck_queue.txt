@@ -1,0 +1,21 @@
+Runbook: stuck_queue
+=====================
+
+Cola de trabajos atascada: los mensajes o jobs no se consumen y el tamano de la cola crece.
+
+Causas posibles:
+- Consumidor detenido o bloqueado.
+- Worker fallando silenciosamente al procesar mensajes.
+- Conexión al broker de colas perdida.
+- Procesamiento masivamente lento que no alcanza la entrada de mensajes.
+
+Pasos de remediacion:
+1. Verificar tamano de la cola: getMetrics(servicio) (campo queueSize).
+2. Revisar el estado del consumidor: getHealth(servicio).
+3. Revisar logs del servicio en busca de errores al consumir la cola.
+4. Reiniciar el servicio consumidor para liberar conexiones atascadas (accion: restart).
+5. Si el broker esta caido, verificar el estado del servicio de colas y reiniciarlo si es necesario.
+6. Tras el reinicio, confirmar que queueSize disminuye.
+7. Si la cola sigue creciendo, revisar la logica del worker y considerar scale-up.
+
+Condicion de corte: queueSize estabilizado y disminuyendo; consumidor procesando mensajes.

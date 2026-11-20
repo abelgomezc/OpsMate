@@ -1,0 +1,20 @@
+Runbook: cascading_failure
+=====================
+
+Falla en cascada: un problema en un servicio dependiente provoca fallos en varios servicios que lo invocan.
+
+Causas posibles:
+- Servicio critico caido o muy lento (pagos, autenticacion, inventario).
+- Falta de aislamiento (timeouts ausentes, reintentos sin limite).
+- Saturación propagada por llamadas sincronicas bloqueantes.
+
+Pasos de remediacion:
+1. Identificar el servicio origen de la falla: revisar salud de todos los servicios (listServices).
+2. Aislar el servicio origen para evitar que siga consumiendo recursos de los dependientes.
+3. Aplicar circuit breaker o deshabilitar temporalmente la funcionalidad no crítica que depende de el.
+4. Reiniciar el servicio origen (accion: restart) una vez identificado el problema raiz.
+5. Recuperar los servicios dependientes de forma ordenada (uno a la vez, validando salud entre cada uno).
+6. Ajustar timeouts y reintentos en los clientes para evitar futura propagacion.
+7. Declarar incidente mayor si el impacto afecta a usuarios finales.
+
+Condicion de corte: todos los servicios reportan UP y las llamadas entre servicios se completan con exito.

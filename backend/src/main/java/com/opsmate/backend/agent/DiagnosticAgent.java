@@ -1,5 +1,6 @@
 package com.opsmate.backend.agent;
 
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.agent.tools.DiagnosticTools;
 import com.opsmate.backend.statemachine.CaseEventRepository;
 import com.opsmate.backend.statemachine.CaseRepository;
@@ -39,8 +40,8 @@ public class DiagnosticAgent extends AbstractAgent {
     private final CaseRepository caseRepository;
 
     public DiagnosticAgent(ChatModel chatModel, CaseEventRepository eventRepository,
-                           DiagnosticTools diagnosticTools, CaseRepository caseRepository) {
-        super("diagnostic", chatModel, eventRepository, 5, 120000);
+                           AuditService auditService, DiagnosticTools diagnosticTools, CaseRepository caseRepository) {
+        super("diagnostic", chatModel, eventRepository, auditService, 5, 120000);
         this.diagnosticTools = diagnosticTools;
         this.caseRepository = caseRepository;
     }

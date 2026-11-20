@@ -1,0 +1,21 @@
+Runbook: error_spike
+=====================
+
+Pico de errores: la tasa de errores (errorRate) de un servicio aumenta de forma repentina.
+
+Causas posibles:
+- Despliegue de una version defectuosa (regresion).
+- Dependencia externa devolviendo errores.
+- Configuracion incorrecta (credenciales, URLs, timeouts).
+- Saturacion de recursos provocando fallos transitorios.
+
+Pasos de remediacion:
+1. Confirmar el pico: getMetrics(servicio) y comparar errorRate con la linea base.
+2. Revisar los logs de error: getLogs(servicio) filtrando nivel ERROR.
+3. Identificar el patron de error (excepcion, codigo HTTP, timeout).
+4. Si coincide con un despliegue reciente, considerar rollback de la version.
+5. Si es una dependencia externa, verificar su estado y aplicar reintentos o circuit breaker.
+6. Si hay saturacion, aplicar scale-up o reiniciar el servicio (accion: restart o scale-up).
+7. Monitorear que el errorRate vuelva a niveles normales.
+
+Condicion de corte: errorRate inferior al umbral de alerta durante al menos 5 minutos.

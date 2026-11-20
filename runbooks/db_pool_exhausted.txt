@@ -1,0 +1,21 @@
+Runbook: db_pool_exhausted
+=====================
+
+Pool de conexiones de base de datos agotado: no hay conexiones disponibles para nuevas peticiones.
+
+Causas posibles:
+- Conexiones no liberadas (fuga de conexiones en el codigo).
+- Consultas lentas que mantienen conexiones ocupadas demasiado tiempo.
+- Tamano del pool insuficiente para la carga actual.
+- Base de datos lenta que retrasa la devolucion de conexiones.
+
+Pasos de remediacion:
+1. Confirmar agotamiento: metricas del pool (conexiones activas vs. maximo) y logs de la aplicacion (excepciones tipo "no se pudo obtener conexion").
+2. Identificar consultas lentas: revisar logs de la base de datos y queries con tiempo de ejecucion alto.
+3. Revisar si hay transacciones abiertas prolongadas en la base de datos.
+4. Reiniciar el servicio para liberar conexiones bloqueadas (accion: restart) como accion inmediata.
+5. Aumentar el tamano del pool de conexiones en la configuracion del servicio y redeploy.
+6. Optimizar o cancelar las consultas lentas identificadas.
+7. Monitorear el uso del pool tras el cambio.
+
+Condicion de corte: conexiones disponibles dentro del tamano del pool y sin errores de obtencion de conexion.

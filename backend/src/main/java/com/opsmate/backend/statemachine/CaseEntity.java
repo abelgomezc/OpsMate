@@ -46,6 +46,15 @@ public class CaseEntity {
     @Column(name = "proposed_action", columnDefinition = "TEXT")
     private String proposedAction;
 
+    @Column(name = "executed_action", columnDefinition = "TEXT")
+    private String executedAction;
+
+    @Column(name = "action_result", columnDefinition = "TEXT")
+    private String actionResult;
+
+    @Column(name = "resolved", nullable = false, columnDefinition = "boolean default false")
+    private boolean resolved;
+
     @Column(name = "fail_reason", columnDefinition = "TEXT")
     private String failReason;
 
@@ -156,6 +165,30 @@ public class CaseEntity {
 
     public void setProposedAction(String proposedAction) {
         this.proposedAction = proposedAction;
+    }
+
+    public String getExecutedAction() {
+        return executedAction;
+    }
+
+    public void setExecutedAction(String executedAction) {
+        this.executedAction = executedAction;
+    }
+
+    public String getActionResult() {
+        return actionResult;
+    }
+
+    public void setActionResult(String actionResult) {
+        this.actionResult = actionResult;
+    }
+
+    public boolean isResolved() {
+        return resolved;
+    }
+
+    public void setResolved(boolean resolved) {
+        this.resolved = resolved;
     }
 
     public void setFailReason(String failReason) {

@@ -81,12 +81,17 @@ CREATE INDEX idx_past_cases_embedding
 CREATE TABLE approvals (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     case_id      UUID        NOT NULL REFERENCES cases (id) ON DELETE CASCADE,
-    action_type  TEXT        NOT NULL,
-    requested_by TEXT        NOT NULL,
-    approved     BOOLEAN,
-    approved_by  TEXT,
-    approved_at  TIMESTAMPTZ,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    action_name  TEXT        NOT NULL,
+    risk_level   VARCHAR(16) NOT NULL,
+    requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    status       VARCHAR(16) NOT NULL DEFAULT 'PENDING',
+    decided_by   TEXT,
+    decided_at   TIMESTAMPTZ,
+    reason       TEXT,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT approvals_status_check
+        CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED'))
 );
 
 CREATE INDEX idx_approvals_case_id ON approvals (case_id);
+CREATE INDEX idx_approvals_status ON approvals (status);

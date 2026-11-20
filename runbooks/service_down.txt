@@ -1,0 +1,21 @@
+Runbook: service_down
+=====================
+
+Servicio caído (DOWN). El servicio no responde a las consultas de salud.
+
+Causas posibles:
+- Proceso del servicio detenido o fallado.
+- Puerto de escucha cerrado o servicio vinculado a la interfaz incorrecta.
+- Dependencia de infraestructura caída (base de datos, cola de mensajes, cache).
+- Fallo en el balanceador de carga o en el grupo de destino.
+
+Pasos de remediacion:
+1. Confirmar el estado: consultar /health del servicio afectado.
+2. Revisar los logs del servicio en busca de trazas de error o panics.
+3. Verificar la conectividad de red y los puertos abiertos (ss -tlnp).
+4. Si el proceso esta detenido, reiniciar el servicio (accion: restart).
+5. Si el servicio depende de una base de datos o cola, verificar su estado con los runbooks correspondientes (db_pool_exhausted, stuck_queue).
+6. Tras la accion, volver a consultar /health y confirmar que el estado es UP.
+7. Si el servicio sigue DOWN, escalar al equipo de plataforma y abrir incidente mayor.
+
+Condicion de corte: el endpoint /health devuelve UP y las peticiones de prueba tienen exito.

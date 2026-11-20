@@ -12,7 +12,7 @@ import javax.sql.DataSource;
  * Builds a {@link SystemConnector} for a {@link SystemsConfig} based on its
  * {@link ConnectorType}.
  */
-public final class ConnectorFactory {
+public class ConnectorFactory {
 
     private final DataSource readOnlyDataSource;
 

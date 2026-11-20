@@ -1,5 +1,7 @@
 package com.opsmate.backend.orchestration;
 
+import com.opsmate.backend.approval.ApprovalService;
+import com.opsmate.backend.audit.AuditService;
 import com.opsmate.backend.statemachine.CaseEntity;
 import com.opsmate.backend.statemachine.CaseRepository;
 import com.opsmate.backend.statemachine.CaseState;
@@ -9,7 +11,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Instant;
 import java.util.List;
@@ -26,17 +29,19 @@ public class CaseEngineService {
     private final CaseRepository caseRepository;
     private final CaseStateMachine stateMachine;
     private final CaseOrchestrator orchestrator;
+    private final ApprovalService approvalService;
+    private final AuditService auditService;
     private final EntityManager entityManager;
-    private final TransactionTemplate transactionTemplate;
 
     public CaseEngineService(CaseRepository caseRepository, CaseStateMachine stateMachine,
-                             CaseOrchestrator orchestrator, EntityManager entityManager,
-                             TransactionTemplate transactionTemplate) {
+                             CaseOrchestrator orchestrator, ApprovalService approvalService,
+                             AuditService auditService, EntityManager entityManager) {
         this.caseRepository = caseRepository;
         this.stateMachine = stateMachine;
         this.orchestrator = orchestrator;
+        this.approvalService = approvalService;
+        this.auditService = auditService;
         this.entityManager = entityManager;
-        this.transactionTemplate = transactionTemplate;
     }
 
     /**
@@ -59,11 +64,14 @@ public class CaseEngineService {
         // Flush to ensure the case is visible to the orchestrator's transaction
         entityManager.flush();
 
-        // Start orchestration asynchronously in a new transaction
         UUID caseId = caseEntity.getId();
-        transactionTemplate.execute(status -> {
-            orchestrator.runCase(caseId);
-            return null;
+        // Start orchestration after the transaction commits so the async orchestrator
+        // always finds the persisted case (avoids a read-before-commit race).
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                orchestrator.runCase(caseId);
+            }
         });
 
         log.info("Started case {} for system {}", caseEntity.getId(), systemId);
@@ -103,27 +111,34 @@ public class CaseEngineService {
 
     /**
      * Approves a case waiting for approval (HIGH risk actions).
+     * Records the approval decision, transitions the case to EXECUTING and restarts
+     * the orchestrator so the action proceeds.
      */
     public void approveCase(UUID caseId, String approvedBy, String reason) {
         CaseEntity caseEntity = getCase(caseId);
         if (caseEntity.getStatus() != CaseState.AWAITING_APPROVAL) {
             throw new IllegalStateException("Case is not awaiting approval: " + caseEntity.getStatus());
         }
+        approvalService.approve(caseId, approvedBy, reason);
         stateMachine.transition(CaseState.AWAITING_APPROVAL, CaseState.EXECUTING, caseId.toString(),
                 "Approved by " + approvedBy + ": " + reason);
         caseEntity.setStatus(CaseState.EXECUTING);
         caseRepository.save(caseEntity);
         log.info("Case {} approved by {}", caseId, approvedBy);
+        // Restart the orchestrator so it proceeds from EXECUTING
+        orchestrator.runCase(caseId);
     }
 
     /**
      * Rejects a case waiting for approval.
+     * Records the rejection and transitions the case to FAILED.
      */
     public void rejectCase(UUID caseId, String rejectedBy, String reason) {
         CaseEntity caseEntity = getCase(caseId);
         if (caseEntity.getStatus() != CaseState.AWAITING_APPROVAL) {
             throw new IllegalStateException("Case is not awaiting approval: " + caseEntity.getStatus());
         }
+        approvalService.reject(caseId, rejectedBy, reason);
         stateMachine.transition(CaseState.AWAITING_APPROVAL, CaseState.FAILED, caseId.toString(),
                 "Rejected by " + rejectedBy + ": " + reason);
         caseEntity.setStatus(CaseState.FAILED);

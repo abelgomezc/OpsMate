@@ -10,15 +10,12 @@ import com.opsmate.backend.statemachine.CaseEventRepository;
 import com.opsmate.backend.testutil.FakeSimEnvServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.UUID;
@@ -48,6 +45,11 @@ class OrchestratorE2ETest {
     @Autowired
     FakeChatModel fakeChatModel;
 
+    @BeforeEach
+    void resetFakeChatModel() {
+        fakeChatModel.clear();
+    }
+
     @BeforeAll
     static void setUp() throws Exception {
         server = new FakeSimEnvServer();
@@ -61,14 +63,17 @@ class OrchestratorE2ETest {
     @Test
     void endToEndLowRiskCase_resolvesSuccessfully() throws Exception {
         // Setup canned responses for the full flow
+        // Order of agent calls:
+        // 1. Triage agent (TRIAGING state)
+        // 2. Knowledge agent (INVESTIGATING state)
+        // 3. Diagnostic agent (INVESTIGATING state)
+        // 4. Supervisor (INVESTIGATING -> PLANNED)
+        // 5. Compliance agent (PLANNED -> EXECUTING)
+        // 6. Action agent (EXECUTING -> VERIFYING)
+        // 7. Verify agent (VERIFYING -> RESOLVED)
+
         fakeChatModel
-                .withResponse("Supervisor", """
-                        {
-                          "nextAction": "TRIAGE",
-                          "riskLevel": "LOW",
-                          "rationale": "Need triage first"
-                        }
-                        """)
+                // Triage agent response
                 .withResponse("Triage agent", """
                         {
                           "severity": "MEDIA",
@@ -77,6 +82,7 @@ class OrchestratorE2ETest {
                           "justification": "Payments service degraded"
                         }
                         """)
+                // Knowledge agent response
                 .withResponse("Knowledge agent", """
                         {
                           "runbookHits": [],
@@ -84,13 +90,7 @@ class OrchestratorE2ETest {
                           "summary": "No runbooks"
                         }
                         """)
-                .withResponse("Supervisor", """
-                        {
-                          "nextAction": "INVESTIGATE",
-                          "riskLevel": "LOW",
-                          "rationale": "Need diagnostics"
-                        }
-                        """)
+                // Diagnostic agent response
                 .withResponse("Diagnostic agent", """
                         {
                           "findings": [{"service": "payments", "observation": "High latency", "evidence": "metrics"}],
@@ -98,6 +98,7 @@ class OrchestratorE2ETest {
                           "recommendedActions": ["restart"]
                         }
                         """)
+                // Supervisor response (INVESTIGATING -> PLANNED)
                 .withResponse("Supervisor", """
                         {
                           "nextAction": "PLAN",
@@ -107,13 +108,13 @@ class OrchestratorE2ETest {
                           "proposedAction": "restart"
                         }
                         """)
-                .withResponse("Supervisor", """
+                // Compliance agent response (auto-approved)
+                .withResponse("Compliance agent", """
                         {
-                          "nextAction": "EXECUTE",
-                          "riskLevel": "LOW",
-                          "rationale": "Execute restart"
+                          "explanation": "Action is MEDIUM risk, auto-approved"
                         }
                         """)
+                // Action agent response
                 .withResponse("Action agent", """
                         {
                           "executed": true,
@@ -123,25 +124,12 @@ class OrchestratorE2ETest {
                           "details": "Success"
                         }
                         """)
-                .withResponse("Supervisor", """
-                        {
-                          "nextAction": "VERIFY",
-                          "riskLevel": "LOW",
-                          "rationale": "Verify resolution"
-                        }
-                        """)
+                // Verify agent response
                 .withResponse("Verify agent", """
                         {
                           "status": "RESOLVED",
                           "evidence": "Service health UP",
                           "details": "Resolved"
-                        }
-                        """)
-                .withResponse("Supervisor", """
-                        {
-                          "nextAction": "RESOLVE",
-                          "riskLevel": "LOW",
-                          "rationale": "Verified resolved"
                         }
                         """);
 
@@ -158,32 +146,25 @@ class OrchestratorE2ETest {
 
         // Verify case_events has entries for each agent
         List<CaseEventRecord> events = eventRepository.findByCaseIdOrderById(caseId);
-        assertTrue(events.size() >= 7, "Should have events for each step: " + events.size());
+        assertTrue(events.size() >= 6, "Should have events for each step: " + events.size());
 
         // Check for STATE_TRANSITION events
         long stateTransitions = events.stream()
                 .filter(e -> "STATE_TRANSITION".equals(e.getType()))
                 .count();
-        assertTrue(stateTransitions >= 7, "Should have state transitions for each phase");
+        assertTrue(stateTransitions >= 6, "Should have state transitions for each phase");
 
         // Check for agent runs
         long agentRuns = events.stream()
                 .filter(e -> "AGENT_RUN".equals(e.getType()) || "TOOL_CALL".equals(e.getType()))
                 .count();
-        // At minimum we should have state transitions
         assertTrue(stateTransitions > 0);
     }
 
     @Test
     void highRiskCase_awaitsApproval() throws Exception {
         fakeChatModel
-                .withResponse("Supervisor", """
-                        {
-                          "nextAction": "TRIAGE",
-                          "riskLevel": "LOW",
-                          "rationale": "Need triage"
-                        }
-                        """)
+                // Triage agent
                 .withResponse("Triage agent", """
                         {
                           "severity": "ALTA",
@@ -192,13 +173,15 @@ class OrchestratorE2ETest {
                           "justification": "Service down"
                         }
                         """)
-                .withResponse("Supervisor", """
+                // Knowledge agent
+                .withResponse("Knowledge agent", """
                         {
-                          "nextAction": "INVESTIGATE",
-                          "riskLevel": "LOW",
-                          "rationale": "Need diagnostics"
+                          "runbookHits": [],
+                          "pastCaseHits": [],
+                          "summary": "No runbooks"
                         }
                         """)
+                // Diagnostic agent
                 .withResponse("Diagnostic agent", """
                         {
                           "findings": [{"service": "payments", "observation": "Service down", "evidence": "health"}],
@@ -206,6 +189,7 @@ class OrchestratorE2ETest {
                           "recommendedActions": ["scale-up"]
                         }
                         """)
+                // Supervisor (INVESTIGATING -> PLANNED) with HIGH risk action
                 .withResponse("Supervisor", """
                         {
                           "nextAction": "PLAN",
@@ -215,21 +199,19 @@ class OrchestratorE2ETest {
                           "proposedAction": "scale-up"
                         }
                         """)
-                .withResponse("Supervisor", """
+                // Compliance agent (requires approval)
+                .withResponse("Compliance agent", """
                         {
-                          "nextAction": "EXECUTE",
-                          "riskLevel": "HIGH",
-                          "rationale": "High risk - needs approval"
+                          "explanation": "Action scale-up is HIGH risk and requires approval"
                         }
                         """);
 
         CaseEntity caseEntity = engineService.startCase("simulated", "Payments service down");
         UUID caseId = caseEntity.getId();
 
-        CaseEntity finalCase = waitForTerminalState(caseId, 30);
+        // Wait a bit for orchestration to reach AWAITING_APPROVAL
+        Thread.sleep(2000);
 
-        // Should be in AWAITING_APPROVAL (not terminal yet, but we stop orchestration there)
-        // Actually the test will timeout waiting for terminal - let's check intermediate state
         CaseEntity intermediate = caseRepository.findById(caseId).orElseThrow();
         // The flow should reach AWAITING_APPROVAL
         assertTrue(intermediate.getStatus() == CaseState.AWAITING_APPROVAL ||
@@ -252,7 +234,7 @@ class OrchestratorE2ETest {
         return caseRepository.findById(caseId).orElseThrow();
     }
 
-    @Configuration
+    @org.springframework.context.annotation.Configuration
     static class TestConfig {
         // Uses beans from TestConfig
     }
